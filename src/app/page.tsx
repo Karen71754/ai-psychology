@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { authClient } from "@/lib/auth/client";
 
 type Message = { role: "user" | "assistant"; content: string };
 type Chat = { id: string; profileId: string; title: string; messages: Message[]; updatedAt: number };
@@ -24,6 +26,8 @@ function makeChat(profileId: string): Chat {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const { data: session, isPending: authPending } = authClient.useSession();
   const [profiles, setProfiles] = useState<Profile[]>([{ id: "local-main", name: "Мой профиль" }]);
   const [activeProfileId, setActiveProfileId] = useState("local-main");
   const [chats, setChats] = useState<Chat[]>([]);
@@ -108,7 +112,7 @@ export default function Home() {
   }
 
   function addProfile() {
-    const name = window.prompt("Как назвать новый локальный профиль?");
+    const name = window.prompt("Как назвать дополнительный профиль на этом устройстве?");
     if (!name?.trim()) return;
     const profile = { id: makeId(), name: name.trim().slice(0, 32) };
     const chat = makeChat(profile.id);
@@ -174,7 +178,7 @@ export default function Home() {
         <div className="sidebar-bottom">
           <div className="profile-menu-wrap">
             {profileOpen && <div className="profile-popover">
-              <div className="popover-heading">Профили на этом устройстве</div>
+              <div className="popover-heading">Твой аккаунт</div>\n              <p className="account-email">{session.user.email}</p>
               {profiles.map((profile) => (
                 <button key={profile.id} className="profile-option" onClick={() => switchProfile(profile.id)}>
                   <span className="profile-avatar small">{profile.name.slice(0, 1).toUpperCase()}</span>
@@ -188,7 +192,7 @@ export default function Home() {
             </div>}
             <button className="profile-button" onClick={() => setProfileOpen((open) => !open)}>
               <span className="profile-avatar">{(activeProfile?.name || "М").slice(0, 1).toUpperCase()}</span>
-              <span className="profile-meta"><strong>{activeProfile?.name || "Мой профиль"}</strong><small>Локальный профиль</small></span>
+              <span className="profile-meta"><strong>{session.user.name || session.user.email}</strong><small>Аккаунт AI Psychology</small></span>
               <span className="profile-dots">•••</span>
             </button>
           </div>
