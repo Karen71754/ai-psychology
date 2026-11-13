@@ -77,3 +77,13 @@ button{color:inherit}
 .mobile-scrim{display:none}
 @media(max-width:760px){.sidebar{position:fixed;inset:0 auto 0 0;width:min(290px,86vw);transform:translateX(-102%);transition:transform .25s;box-shadow:none}.sidebar-open{transform:translateX(0);box-shadow:20px 0 70px rgba(0,0,0,.45)}.mobile-scrim{display:block;position:fixed;inset:0;z-index:4;border:0;background:rgba(0,0,0,.58)}.sidebar-close{display:block}.mobile-menu{display:block;margin-right:auto}.mobile-brand{display:block;margin-right:auto;font-family:Manrope,sans-serif;font-size:14px}.main-topbar{height:59px;padding:0 14px;gap:9px}.topbar-status{display:none}.top-new-chat{font-size:11px;padding:7px 9px}.conversation-area{padding:23px 15px 15px}.messages{max-height:calc(100vh - 270px);min-height:300px;padding:20px 0}.message-row{max-width:96%}.notice{padding:0 6px}.conversation-heading{padding-bottom:17px}}
 @media(max-width:420px){.mobile-brand{font-size:12px}.top-new-chat span{display:none}.conversation-area{padding-left:11px;padding-right:11px}.bubble{font-size:12px;padding:11px 13px}}
+
+.auth-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:32px 18px;background:radial-gradient(ellipse at 50% 0%,rgba(104,83,180,.2),transparent 48%),var(--bg)}
+.auth-brand{display:flex;align-items:center;gap:12px;color:var(--ink)}
+.auth-brand>div{display:flex;flex-direction:column;gap:4px}
+.auth-brand strong{font-family:Manrope,sans-serif;font-size:18px}
+.auth-brand span:not(.auth-mark){font-size:11px;color:var(--muted)}
+.auth-mark{width:42px;height:42px;display:grid;place-items:center;border:1px solid rgba(167,139,250,.3);border-radius:13px;background:#211c37;color:#c4b5fd;font-size:27px}
+.auth-screen [data-slot="card"]{background:#111522;border-color:rgba(167,139,250,.2);color:var(--ink)}
+.auth-loading{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted);font-size:13px}
+.account-email{font-size:10px;color:#9ca4b8;padding:0 8px;overflow-wrap:anywhere}
