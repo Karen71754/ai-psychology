@@ -15,6 +15,7 @@ export function Providers({ children }: { children: ReactNode }) {
       replace={router.replace}
       onSessionChange={() => router.refresh()}
       redirectTo="/"
+      social={{ providers: ["google"] }}
     >
       {children}
     </NeonAuthUIProvider>
