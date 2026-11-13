@@ -9,8 +9,8 @@ type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export async function POST(request: NextRequest) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: "На сервере не настроен OPENAI_API_KEY." }, { status: 503 });
+    if (!process.env.GROQ_API_KEY) {
+      return NextResponse.json({ error: "На сервере не настроен GROQ_API_KEY." }, { status: 503 });
     }
     const body = await request.json();
     if (!Array.isArray(body?.messages) || body.messages.length === 0) {
@@ -33,9 +33,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Последнее сообщение должно быть сообщением пользователя." }, { status: 400 });
     }
 
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const client = new OpenAI({
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: "https://api.groq.com/openai/v1",
+    });
     const response = await client.responses.create({
-      model: process.env.OPENAI_MODEL || "gpt-6.1-sol",
+      model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
       instructions: PSYCHOLOGY_SYSTEM_PROMPT,
       input: messages.map((message) => ({ role: message.role, content: message.content })),
       max_output_tokens: 1100,
