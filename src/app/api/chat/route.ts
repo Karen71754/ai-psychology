@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PSYCHOLOGY_SYSTEM_PROMPT } from "@/lib/prompts";
+import { auth } from "@/lib/auth/server";
 
 export const runtime = "nodejs";
 const MAX_MESSAGES = 24;
