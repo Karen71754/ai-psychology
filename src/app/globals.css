@@ -1,6 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
 :root{color-scheme:dark;--bg:#090b12;--ink:#edf0fa;--muted:#9299ad;--accent:#a78bfa;--line:rgba(167,139,250,.15);--card:#111522;--soft:#191f30;--sidebar:#0d1019}
-*{box-sizing:border-box}
+*{box-sizing:border-box}\nhtml,body{touch-action:pan-x pan-y;overscroll-behavior: none}\ninput,textarea,select{touch-action:pan-x pan-y}
 html,body{min-height:100%;margin:0;background:var(--bg);color:var(--ink)}
 body{font-family:'DM Sans',sans-serif;background:radial-gradient(ellipse at 70% -20%,rgba(104,83,180,.17),transparent 46%),var(--bg)}
 button,textarea{font:inherit}
