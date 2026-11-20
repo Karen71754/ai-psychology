@@ -5,235 +5,113 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth/client";
 
 type Message = { role: "user" | "assistant"; content: string };
-type Chat = { id: string; profileId: string; title: string; messages: Message[]; updatedAt: number };
-type Profile = { id: string; name: string };
-
-const welcome: Message = {
-  role: "assistant",
-  content: "Привет! Я ИИ-собеседник. Здесь можно спокойно поговорить — о том, что тревожит, радует или просто крутится в голове.\n\nС чего начнём?",
-};
-const CHAT_KEY = "ai-psychology-chats-v1";
-const PROFILE_KEY = "ai-psychology-profiles-v1";
-const ACTIVE_PROFILE_KEY = "ai-psychology-active-profile-v1";
-
-function makeId() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-function makeChat(profileId: string): Chat {
-  return { id: makeId(), profileId, title: "Новый чат", messages: [welcome], updatedAt: Date.now() };
-}
+type Chat = { id: string; title: string; messages: Message[]; updatedAt: number; pinned?: boolean; archived?: boolean };
+const STORAGE_KEY = "ai-psychology-chats-v3";
+const welcome: Message = { role: "assistant", content: "Привет. Это пространство, где можно выдохнуть, разобраться в мыслях и поговорить без осуждения.\n\nЧто сейчас у тебя на уме?" };
+const makeId = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const makeChat = (): Chat => ({ id: makeId(), title: "Новый чат", messages: [welcome], updatedAt: Date.now() });
+const day = (value: number) => new Date(value).toLocaleDateString("ru-RU");
 
 export default function Home() {
   const router = useRouter();
-  const { data: session, isPending: authPending } = authClient.useSession();
-  const [profiles, setProfiles] = useState<Profile[]>([{ id: "local-main", name: "Мой профиль" }]);
-  const [activeProfileId, setActiveProfileId] = useState("local-main");
+  const { data: session, isPending } = authClient.useSession();
   const [chats, setChats] = useState<Chat[]>([]);
-  const [activeChatId, setActiveChatId] = useState("");
+  const [activeId, setActiveId] = useState("");
   const [input, setInput] = useState("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [hydrated, setHydrated] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [menuId, setMenuId] = useState("");
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [archivedView, setArchivedView] = useState(false);
+  const [ready, setReady] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => { if (!isPending && !session) router.replace("/auth/sign-in"); }, [isPending, session, router]);
   useEffect(() => {
     try {
-      const savedProfiles = localStorage.getItem(PROFILE_KEY);
-      const parsedProfiles = savedProfiles ? JSON.parse(savedProfiles) as Profile[] : null;
-      const nextProfiles = parsedProfiles?.length ? parsedProfiles : [{ id: "local-main", name: "Мой профиль" }];
-      const savedActive = localStorage.getItem(ACTIVE_PROFILE_KEY);
-      const nextActive = nextProfiles.some((profile) => profile.id === savedActive) ? savedActive! : nextProfiles[0].id;
-      const savedChats = localStorage.getItem(CHAT_KEY);
-      const parsedChats = savedChats ? JSON.parse(savedChats) as Chat[] : [];
-      const validChats = Array.isArray(parsedChats) ? parsedChats.filter((chat) =>
-        chat && typeof chat.id === "string" && typeof chat.profileId === "string" && Array.isArray(chat.messages)
-      ) : [];
-      const profileChats = validChats.filter((chat) => chat.profileId === nextActive).sort((a, b) => b.updatedAt - a.updatedAt);
-      const initialChats = profileChats.length ? validChats : [...validChats, makeChat(nextActive)];
-      setProfiles(nextProfiles);
-      setActiveProfileId(nextActive);
-      setChats(initialChats);
-      setActiveChatId(profileChats[0]?.id || initialChats[initialChats.length - 1].id);
-    } catch {
-      const initial = makeChat("local-main");
-      setChats([initial]);
-      setActiveChatId(initial.id);
-    } finally {
-      setHydrated(true);
-    }
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]") as Chat[];
+      const valid = Array.isArray(parsed) ? parsed.filter(c => c && typeof c.id === "string" && Array.isArray(c.messages)) : [];
+      const list = valid.length ? valid : [makeChat()];
+      setChats(list);
+      setActiveId(list.find(c => !c.archived)?.id || list[0].id);
+    } catch { const c = makeChat(); setChats([c]); setActiveId(c.id); }
+    setReady(true);
   }, []);
+  useEffect(() => { if (ready) localStorage.setItem(STORAGE_KEY, JSON.stringify(chats)); }, [chats, ready]);
+  const active = chats.find(c => c.id === activeId) || chats.find(c => !c.archived) || chats[0];
+  const messages = active?.messages || [welcome];
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [messages, loading]);
 
-  useEffect(() => {
-    if (!hydrated) return;
-    localStorage.setItem(CHAT_KEY, JSON.stringify(chats));
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profiles));
-    localStorage.setItem(ACTIVE_PROFILE_KEY, activeProfileId);
-  }, [chats, profiles, activeProfileId, hydrated]);
+  const filtered = useMemo(() => chats.filter(c => (archivedView ? c.archived : !c.archived) && c.title.toLowerCase().includes(search.toLowerCase())).sort((a,b) => Number(!!b.pinned)-Number(!!a.pinned) || b.updatedAt-a.updatedAt), [chats, search, archivedView]);
+  const groups = useMemo(() => {
+    const today = day(Date.now()), yesterday = day(Date.now()-86400000);
+    return [
+      { title: "Закреплённые", items: filtered.filter(c=>c.pinned) },
+      { title: "Сегодня", items: filtered.filter(c=>!c.pinned && day(c.updatedAt)===today) },
+      { title: "Вчера", items: filtered.filter(c=>!c.pinned && day(c.updatedAt)===yesterday) },
+      { title: "Предыдущие", items: filtered.filter(c=>!c.pinned && day(c.updatedAt)!==today && day(c.updatedAt)!==yesterday) },
+    ].filter(g=>g.items.length);
+  }, [filtered]);
 
-  const visibleChats = useMemo(
-    () => chats.filter((chat) => chat.profileId === activeProfileId).sort((a, b) => b.updatedAt - a.updatedAt),
-    [chats, activeProfileId],
-  );
-  const activeChat = visibleChats.find((chat) => chat.id === activeChatId) || visibleChats[0];
-  const messages = activeChat?.messages || [welcome];
-  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) || profiles[0];
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, loading]);
-
-  function createNewChat() {
-    const chat = makeChat(activeProfileId);
-    setChats((current) => [...current, chat]);
-    setActiveChatId(chat.id);
-    setInput("");
-    setError("");
-    setSidebarOpen(false);
+  function patchChat(id: string, patch: Partial<Chat>) { setChats(prev=>prev.map(c=>c.id===id?{...c,...patch}:c)); }
+  function newChat() { const c=makeChat(); setChats(prev=>[c,...prev]); setActiveId(c.id); setInput(""); setError(""); setSearch(""); setArchivedView(false); setMobileOpen(false); }
+  function rename(c: Chat) { const title=window.prompt("Название чата",c.title); if(title?.trim()) patchChat(c.id,{title:title.trim().slice(0,80)}); setMenuId(""); }
+  function remove(c: Chat) {
+    if(!window.confirm(`Удалить «${c.title}»? Это действие нельзя отменить.`)) return;
+    const rest=chats.filter(x=>x.id!==c.id);
+    if(!rest.length){const fresh=makeChat();setChats([fresh]);setActiveId(fresh.id);}
+    else {setChats(rest);if(activeId===c.id)setActiveId(rest.find(x=>!x.archived)?.id||rest[0].id);}
+    setMenuId("");
   }
-
-  function switchProfile(profileId: string) {
-    if (profileId === activeProfileId) {
-      setProfileOpen(false);
-      return;
-    }
-    const targetChat = chats.filter((chat) => chat.profileId === profileId).sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    const chat = targetChat || makeChat(profileId);
-    if (!targetChat) setChats((current) => [...current, chat]);
-    setActiveProfileId(profileId);
-    setActiveChatId(chat.id);
-    setProfileOpen(false);
-    setSidebarOpen(false);
-    setInput("");
-    setError("");
-  }
-
-  function addProfile() {
-    const name = window.prompt("Как назвать дополнительный профиль на этом устройстве?");
-    if (!name?.trim()) return;
-    const profile = { id: makeId(), name: name.trim().slice(0, 32) };
-    const chat = makeChat(profile.id);
-    setProfiles((current) => [...current, profile]);
-    setChats((current) => [...current, chat]);
-    setActiveProfileId(profile.id);
-    setActiveChatId(chat.id);
-    setProfileOpen(false);
-    setInput("");
-  }
-
-  async function sendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const text = input.trim();
-    if (!text || loading || !activeChat) return;
-    const nextMessages: Message[] = [...activeChat.messages, { role: "user", content: text }];
-    setChats((current) => current.map((chat) => chat.id === activeChat.id ? {
-      ...chat,
-      title: chat.title === "Новый чат" ? text.slice(0, 34) + (text.length > 34 ? "…" : "") : chat.title,
-      messages: nextMessages,
-      updatedAt: Date.now(),
-    } : chat));
-    setInput("");
-    setError("");
-    setLoading(true);
+  async function send(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault(); const text=input.trim();
+    if(!text||loading||!active) return;
+    const chatId=active.id;
+    const next=[...active.messages,{role:"user" as const,content:text}];
+    const title=active.title==="Новый чат"?text.slice(0,42)+(text.length>42?"…":""):active.title;
+    patchChat(chatId,{messages:next,title,updatedAt:Date.now()}); setInput("");setError("");setLoading(true);
+    const controller=new AbortController();abortRef.current=controller;
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages.slice(1) }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Не удалось отправить сообщение.");
-      setChats((current) => current.map((chat) => chat.id === activeChat.id ? {
-        ...chat,
-        messages: [...nextMessages, { role: "assistant", content: data.reply }],
-        updatedAt: Date.now(),
-      } : chat));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Что-то пошло не так.");
-    } finally {
-      setLoading(false);
-    }
+      const response=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:next.slice(1)}),signal:controller.signal});
+      const data=await response.json();
+      if(!response.ok) throw new Error(data.error||"Не удалось получить ответ.");
+      setChats(prev=>prev.map(c=>c.id===chatId?{...c,messages:[...next,{role:"assistant",content:data.reply}],updatedAt:Date.now()}:c));
+    } catch(err) {
+      if(err instanceof Error && err.name==="AbortError") return;
+      setError(err instanceof Error?err.message:"Произошла ошибка. Попробуй ещё раз.");
+    } finally {setLoading(false);abortRef.current=null;}
   }
+  function stop(){abortRef.current?.abort();setLoading(false);}
+  function copy(text:string){navigator.clipboard?.writeText(text).catch(()=>{});}
 
-  return (
-    <main className="app-layout">
-      {sidebarOpen && <button className="mobile-scrim" aria-label="Закрыть меню" onClick={() => setSidebarOpen(false)} />}
-      <aside className={`sidebar ${sidebarOpen ? "sidebar-open" : ""}`}>
-        <div className="sidebar-top">
-          <a className="brand" href="#top"><span className="brand-mark">ψ</span><span>AI <b>Psychology</b></span></a>
-          <button className="icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Закрыть меню">×</button>
-        </div>
-        <button className="new-chat-button" onClick={createNewChat}><span>＋</span> Новый чат</button>
-        <div className="history-label">ИСТОРИЯ</div>
-        <div className="chat-history">
-          {visibleChats.length === 0 ? <p className="empty-history">Здесь появятся твои разговоры</p> : visibleChats.map((chat) => (
-            <button key={chat.id} className={`history-item ${chat.id === activeChat?.id ? "history-active" : ""}`} onClick={() => { setActiveChatId(chat.id); setSidebarOpen(false); setError(""); }}>
-              <span className="history-icon">◷</span><span className="history-title">{chat.title}</span>
-            </button>
-          ))}
-        </div>
-        <div className="sidebar-bottom">
-          <div className="profile-menu-wrap">
-            {profileOpen && <div className="profile-popover">
-              <div className="popover-heading">Твой аккаунт</div>\n              <p className="account-email">{session.user.email}</p>
-              {profiles.map((profile) => (
-                <button key={profile.id} className="profile-option" onClick={() => switchProfile(profile.id)}>
-                  <span className="profile-avatar small">{profile.name.slice(0, 1).toUpperCase()}</span>
-                  <span>{profile.name}</span>
-                  {profile.id === activeProfileId && <span className="profile-check">✓</span>}
-                </button>
-              ))}
-              <div className="popover-divider" />
-              <button className="profile-option add-profile" onClick={addProfile}><span className="add-profile-icon">＋</span> Добавить профиль</button>
-              <p className="local-profile-note">Это локальные профили. Настоящий вход в аккаунт пока не подключён.</p>
-            </div>}
-            <button className="profile-button" onClick={() => setProfileOpen((open) => !open)}>
-              <span className="profile-avatar">{(activeProfile?.name || "М").slice(0, 1).toUpperCase()}</span>
-              <span className="profile-meta"><strong>{session.user.name || session.user.email}</strong><small>Аккаунт AI Psychology</small></span>
-              <span className="profile-dots">•••</span>
-            </button>
-          </div>
-        </div>
-      </aside>
+  if(isPending||!session) return <main className="auth-loading"><img src="/icon.svg" width="52" height="52" alt=""/><p>Открываем твоё пространство…</p></main>;
 
-      <section className="main-panel" id="top">
-        <header className="main-topbar">
-          <button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Открыть историю">☰</button>
-          <div className="mobile-brand">AI <b>Psychology</b></div>
-          <div className="topbar-status"><span className="status-dot" /> ИИ-собеседник</div>
-          <button className="top-new-chat" onClick={createNewChat}>＋ <span>Новый чат</span></button>
-        </header>
-        <div className="conversation-area">
-          <div className="conversation-heading">
-            <div className="assistant-avatar">ψ</div>
-            <div><strong>Твой собеседник</strong><span>Место, где можно быть собой</span></div>
-          </div>
-          <div className="messages" aria-live="polite">
-            {messages.map((message, index) => (
-              <div className={`message-row ${message.role}`} key={`${activeChat?.id}-${index}-${message.role}`}>
-                {message.role === "assistant" && <div className="mini-avatar">ψ</div>}
-                <div className="bubble">{message.content}</div>
-              </div>
-            ))}
-            {loading && <div className="message-row assistant"><div className="mini-avatar">ψ</div><div className="bubble typing">Подбираю слова…</div></div>}
-            <div ref={messagesEndRef} />
-          </div>
-          {error && <p className="error" role="alert">{error}</p>}
-          <div className="composer-wrap">
-            <form className="composer" onSubmit={sendMessage}>
-              <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
-              }} placeholder="Напиши, что у тебя на уме…" rows={2} maxLength={6000} aria-label="Твоё сообщение" />
-              <button type="submit" disabled={loading || !input.trim()} aria-label="Отправить сообщение">↑</button>
-            </form>
-            <div className="composer-hint">Enter — отправить · Shift + Enter — новая строка</div>
-            <p className="notice">AI Psychology — ИИ-помощник для эмоциональной поддержки и саморефлексии, не замена квалифицированной психологической или медицинской помощи. При непосредственной опасности обратись в местную экстренную службу.</p>
-          </div>
-        </div>
-      </section>
-    </main>
-  );
+  return <main className="app-shell">
+    {mobileOpen&&<button className="mobile-scrim" aria-label="Закрыть меню" onClick={()=>setMobileOpen(false)}/>}
+    <aside className={`sidebar ${mobileOpen?"sidebar-open":""}`}>
+      <div className="sidebar-head"><a className="brand" href="#top"><img src="/icon.svg" alt=""/><span>AI <b>Psychology</b></span></a><button className="icon-btn mobile-close" onClick={()=>setMobileOpen(false)} aria-label="Закрыть меню">×</button></div>
+      <button className="new-chat" onClick={newChat}><span>＋</span> Новый чат <kbd>Ctrl K</kbd></button>
+      <label className="search-box"><span>⌕</span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Поиск по чатам" aria-label="Поиск по чатам"/></label>
+      <button className={`archive-toggle ${archivedView?"selected":""}`} onClick={()=>setArchivedView(v=>!v)}>{archivedView?"← Все чаты":"▣ Архив"}</button>
+      <div className="history-scroll">
+        {groups.length?groups.map(g=><section className="history-group" key={g.title}><div className="group-title">{g.title}</div>{g.items.map(c=><div className={`chat-entry ${active?.id===c.id?"active":""}`} key={c.id}>
+          <button className="chat-select" onClick={()=>{setActiveId(c.id);setMobileOpen(false);setError("");}}><span className="chat-glyph">◌</span><span className="chat-name">{c.title}</span></button>
+          <button className="chat-more" onClick={()=>setMenuId(menuId===c.id?"":c.id)} aria-label="Действия с чатом">•••</button>
+          {menuId===c.id&&<div className="chat-menu"><button onClick={()=>{patchChat(c.id,{pinned:!c.pinned});setMenuId("");}}>{c.pinned?"Открепить":"Закрепить"}</button><button onClick={()=>rename(c)}>Переименовать</button><button onClick={()=>{patchChat(c.id,{archived:!c.archived});setMenuId("");if(activeId===c.id){const next=chats.find(x=>x.id!==c.id&&!x.archived);if(next)setActiveId(next.id);}}}>{c.archived?"Вернуть из архива":"В архив"}</button><button className="danger" onClick={()=>remove(c)}>Удалить</button></div>}
+        </div>)}</section>):<div className="no-chats">{search?"Ничего не найдено":"Здесь появятся твои разговоры"}</div>}
+      </div>
+      <div className="sidebar-footer"><div className="user-chip"><span className="user-avatar">{(session.user.name||session.user.email||"A").slice(0,1).toUpperCase()}</span><span className="user-meta"><b>{session.user.name||"Мой аккаунт"}</b><small>{session.user.email}</small></span><button className="logout" title="Выйти" onClick={()=>authClient.signOut().then(()=>router.replace("/auth/sign-in"))}>↗</button></div></div>
+    </aside>
+    <section className="main" id="top">
+      <header className="topbar"><button className="icon-btn mobile-open" onClick={()=>setMobileOpen(true)} aria-label="Открыть меню">☰</button><div className="top-brand"><img src="/icon.svg" alt=""/><span>Тихое место для важных мыслей</span></div><div className="top-actions"><span className="online-dot"/> На связи <button className="top-new" onClick={newChat}>＋ Новый чат</button></div></header>
+      <div className="conversation">
+        <div className="conversation-title"><div className="assistant-mark"><img src="/icon.svg" alt="AI Psychology"/></div><div><h1>{active?.title==="Новый чат"?"Рад, что ты здесь":active?.title}</h1><p>AI Psychology <span>·</span> пространство без осуждения</p></div></div>
+        <div className="messages" aria-live="polite">{messages.map((m,i)=><div className={`message-line ${m.role}`} key={`${active?.id}-${i}`}><div className="message-avatar">{m.role==="assistant"?<img src="/icon.svg" alt="AI"/>:<span>{(session.user.name||session.user.email||"Я").slice(0,1).toUpperCase()}</span>}</div><div className="message-content"><div className="message-author">{m.role==="assistant"?"AI Psychology":"Ты"}</div><div className="message-text">{m.content}</div><div className="message-tools"><button onClick={()=>copy(m.content)}>Копировать</button></div></div></div>)}{loading&&<div className="message-line assistant"><div className="message-avatar"><img src="/icon.svg" alt="AI"/></div><div className="message-content"><div className="message-author">AI Psychology</div><div className="message-text typing"><i/><i/><i/> Думаю над ответом…</div></div></div>}<div ref={endRef}/></div>
+        {error&&<div className="error-banner" role="alert">{error}</div>}
+        <div className="composer-area"><form className="composer" onSubmit={send}><textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();e.currentTarget.form?.requestSubmit();}}} placeholder="Расскажи, что у тебя на душе…" rows={1} maxLength={6000} aria-label="Сообщение"/>{loading?<button type="button" className="stop-btn" onClick={stop} aria-label="Остановить ответ">■</button>:<button type="submit" disabled={!input.trim()} aria-label="Отправить">↑</button>}</form><div className="composer-bottom"><span>Enter — отправить · Shift + Enter — новая строка</span><span>{input.length}/6000</span></div><p className="disclaimer">AI Psychology — ИИ-помощник для эмоциональной поддержки и саморефлексии, не замена профессиональной помощи.</p></div>
+      </div>
+    </section>
+  </main>;
 }
